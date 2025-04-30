@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  sqlite:
+    image: theosotr/sqlite3-test
+    container_name: sqlite3
+    entrypoint: ["sleep", "infinity"]
+
+  best-gen:
+    build: .
+    container_name: best-gen
+    depends_on:
+      - sqlite
+    volumes:
+      - .:/app
+      - /var/run/docker.sock:/var/run/docker.sock
+    working_dir: /app
+    entrypoint: ["sleep", "infinity"]
