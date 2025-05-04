@@ -1,0 +1,6 @@
+# Generated folders
+coverage
+out
+
+# Python cache files
+__pycache__/
