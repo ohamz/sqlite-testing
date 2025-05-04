@@ -40,12 +40,6 @@ def sql_generator():
     HAVING total > 50;
     """
 
-def gen2():
-    yield "CREATE TABLE t0 ( c0 INT );"
-    yield "INSERT INTO t0 ( c0 ) VALUES (1);"
-    yield "SELECT * FROM t0 WHERE 1 = 1;"
-
-
 def main():
     server_container = "sqlite3"
 
@@ -77,7 +71,6 @@ def main():
     else:
         print("> Outputs are different! Check logs.")
 
-    queries = "\n".join(sql_generator()) + "\n"
     
 
 

@@ -33,11 +33,11 @@ def copy_coverage_files(container_name, sqlite_dir, dest_dir="coverage"):
         f"{dest_dir}/sqlite3-sqlite3.gcda"
     ], check=True)
 
-    subprocess.run([
-        "docker", "cp",
-        f"{container_name}:{sqlite_dir}/sqlite3.c.gcov",
-        f"{dest_dir}/sqlite3.c.gcov"
-    ], check=True)
+    # subprocess.run([
+    #     "docker", "cp",
+    #     f"{container_name}:{sqlite_dir}/sqlite3.c.gcov",
+    #     f"{dest_dir}/sqlite3.c.gcov"
+    # ], check=True)
 
 def write_results(stdout_new, stderr_new, stdout_old, stderr_old):
     os.makedirs("out", exist_ok=True)
