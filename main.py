@@ -28,21 +28,25 @@ queue = deque()
 
 def seed_initial_queries():
     return [
-        # "CREATE TABLE t1(a INT);",
-        # "INSERT INTO t1 VALUES(1);",
-        # "CREATE TABLE t2(b INT);",
-        # "SELECT a, b FROM t1 LEFT JOIN t2 ON true WHERE (b IS NOT NULL) IS false;"
         "SELECT * FROM t0 WHERE c0 > 5;"
     ]
 
+    # return [
+    #     "CREATE TABLE t10(aa INT, bb INT);",
+    #     "CREATE INDEX t1x ON t10( ABS(aa), ABS(bb) );",
+    #     "INSERT INTO t10 VALUES(-2,-3), (+2,-3), (-2,+3), (+2,+3);",
+    #     "SELECT * FROM t10 WHERE ((ABS(aa)=1 AND 1=2) OR ABS(aa)=2) AND ABS(bb)=3;]",
+    # ]
+
 
 def run_with_coverage(query):
+    print(f"Running query: {query}")
     stdout, stderr = run_query(server_container, sqlite_dir, sqlite_binary, query)
     print(f"\n{stderr}\n")
     # print(f"\n{stdout}\n")
 
-    print("\nExecution finished. Generating coverage...")
     coverage = collect_coverage(server_container)
+    print(f"Generating coverage... {coverage}")
     # copy_coverage_files(server_container, sqlite_dir)
     print(coverage)
 
@@ -62,15 +66,6 @@ def initialize_queue():
     """
     Initialize the queue with initial queries and their coverage.
     """
-    # initialize_db = [
-    #     "CREATE TABLE t1(a INT);",
-    #     "INSERT INTO t1 VALUES(1);"
-    #     ]
-    # for q in initialize_db:
-    #     print(f"Running initial query: {q}")
-    #     coverage, _ = run_with_coverage(q)
-    #     entry = QueueEntry(sql=q, cov=coverage)
-
     initial_queries = seed_initial_queries()
     for q in initial_queries:
         print(f"Running initial query: {q}")
@@ -81,17 +76,21 @@ def initialize_queue():
 
 
 def main_loop():
-#     # queries = "\n".join(sql_generator()) + "\n"
-#     queries = "\n".join(gen2()) + "\n"
-#     # print(queries)
-
     clear_coverage(server_container, sqlite_dir)
     print("Setting up database...")
     db = setup_db(server_container, sqlite_dir, sqlite_binary)
     gen = Generator(db)
     print(collect_coverage(server_container))
-    print(db)
-    initialize_queue()
+    # print()
+
+    initial_queries = seed_initial_queries()
+    print("Seeding initial queries...")
+    for q in initial_queries:
+        coverage, _ = run_with_coverage(q)
+    print(f"Initial query coverage: {coverage}")
+    # run_with_coverage("SELECT * FROM t0;")
+    # print(db)
+    # initialize_queue()
     queries_count = 0
     bugs_found = 0
 
@@ -112,20 +111,21 @@ def main_loop():
         mutated_queries = gen.mutate_query(entry.sql, MutationTechnique.GENERIC, MUTATION_ATTEMPTS)
 
         for new_sql in mutated_queries:
-            print(f"Running mutated query: {new_sql}")
             coverage, correct = run_with_coverage(new_sql)
 
             if not correct:
                 bugs_found += 1
-
-            if coverage - entry.new_coverage > 0.05:
+            elif coverage - entry.new_coverage > 0.05:
                 print(f"New coverage: {coverage} (previous: {entry.new_coverage})")
-                new_entry = QueueEntry(
-                    sql=new_sql,
-                    cov=coverage
-                )
-                queue.append(new_entry)
-                queries_count += 1
+            else:
+                continue
+
+            new_entry = QueueEntry(
+                sql=new_sql,
+                cov=coverage
+            )
+            queue.append(new_entry)
+            queries_count += 1
 
         entry.mutation_count += 1
         entry.update_coverage(coverage)
