@@ -6,8 +6,9 @@ from scripts import (
     clear_coverage,
     run_query,
     collect_coverage,
+    export_query_to_local,
     copy_coverage_files,
-    write_results,
+    write_results
 )
 # from mutation_techniques import MutationTechnique, mutate_query
 from generator import Generator, MutationTechnique
@@ -30,13 +31,6 @@ def seed_initial_queries():
     return [
         "SELECT * FROM t0 WHERE c0 > 5;"
     ]
-
-    # return [
-    #     "CREATE TABLE t10(aa INT, bb INT);",
-    #     "CREATE INDEX t1x ON t10( ABS(aa), ABS(bb) );",
-    #     "INSERT INTO t10 VALUES(-2,-3), (+2,-3), (-2,+3), (+2,+3);",
-    #     "SELECT * FROM t10 WHERE ((ABS(aa)=1 AND 1=2) OR ABS(aa)=2) AND ABS(bb)=3;]",
-    # ]
 
 
 def run_with_coverage(query):
@@ -81,16 +75,18 @@ def main_loop():
     db = setup_db(server_container, sqlite_dir, sqlite_binary)
     gen = Generator(db)
     print(collect_coverage(server_container))
-    # print()
 
-    initial_queries = seed_initial_queries()
-    print("Seeding initial queries...")
-    for q in initial_queries:
-        coverage, _ = run_with_coverage(q)
-    print(f"Initial query coverage: {coverage}")
-    # run_with_coverage("SELECT * FROM t0;")
-    # print(db)
-    # initialize_queue()
+    # initial_queries = seed_initial_queries()
+    # print("Seeding initial queries...")
+    # for q in initial_queries:
+    #     coverage, _ = run_with_coverage(q)
+    # print(f"Initial query coverage: {coverage}")
+    # sql = "SELECT * FROM t4 CROSS JOIN t1 ON c13 > t1.c3 WHERE c12 <> NOT TRUE GROUP BY c5, c3 HAVING c12 >= 73 ORDER BY c14 ASC, c12 DESC LIMIT 58;"
+    # run_with_coverage(sql)
+    # export_query_to_local(sql, server_container, 0)
+
+    print(db)
+    initialize_queue()
     queries_count = 0
     bugs_found = 0
 
@@ -114,6 +110,7 @@ def main_loop():
             coverage, correct = run_with_coverage(new_sql)
 
             if not correct:
+                export_query_to_local(new_sql, server_container, bugs_found)
                 bugs_found += 1
             elif coverage - entry.new_coverage > 0.05:
                 print(f"New coverage: {coverage} (previous: {entry.new_coverage})")
@@ -134,6 +131,8 @@ def main_loop():
         
 
         print(f"Queue size: {len(queue)}")
+        print(f"Queries executed: {queries_count}")
+        print(f"Bugs found: {bugs_found}")
 
 
     print(f"Total queries executed: {queries_count}")

@@ -1,12 +1,12 @@
 import subprocess
 import os
 import re
-# import random
+import tempfile
 from schema import Database, ColumnType, ConstraintType
 
-TEMP_DB_PATH = "/tmp/temp.db"
+TEMP_DB_PATH = "/home/test/test.db"
 
-def setup_db(container_name, sqlite_dir, sqlite_binary, db_path=TEMP_DB_PATH):
+def setup_db(container_name, sqlite_dir, sqlite_binary, db_path=TEMP_DB_PATH, local_path="bugs/test.db"):
     # Step 1: Remove file only if it exists
     subprocess.run([
         "docker", "exec", container_name,
@@ -22,8 +22,6 @@ def setup_db(container_name, sqlite_dir, sqlite_binary, db_path=TEMP_DB_PATH):
     if result.returncode != 0:
         print("Error creating DB:")
         print(result.stderr.decode())
-    # else:
-    #     print(f"Fresh SQLite DB created at {db_path}")
 
     # Step 3: Create fixed schema
     db = Database()
@@ -53,17 +51,20 @@ def setup_db(container_name, sqlite_dir, sqlite_binary, db_path=TEMP_DB_PATH):
     db.tables[1].create_extra_column(ColumnType.REAL)
     db.tables[2].create_extra_column(ColumnType.TEXT)
 
-
-
     sql = db.to_sql()
     stdout, stderr = run_query(container_name, sqlite_dir, sqlite_binary, sql, db_path=db_path)
-    if stderr:
-        # print("[ERROR SETUP]", stderr.decode() if hasattr(stderr, 'decode') else stderr)
-        print("[ERROR IN SETUP]")
-    else:
-        print("[SETUP SUCCESS]")
 
-    # return db_path
+    result = subprocess.run([
+        "docker", "cp", f"{container_name}:{db_path}", local_path
+    ], capture_output=True)
+
+    if result.returncode != 0:
+        print("Error copying DB from container:")
+        print(result.stderr.decode())
+    else:
+        print(f"Database copied to {local_path}")
+
+    # return db
     return db.to_json()
 
 # Deletes all .gcda files before running
@@ -78,7 +79,7 @@ def run_query(container_name, sqlite_dir, sqlite_binary, query, db_path=TEMP_DB_
     result = subprocess.run([
         "docker", "exec", "-i", container_name,
         "sh", "-c", f"cd {sqlite_dir} && ./{sqlite_binary} {db_path}"
-    ], input=query.encode(), capture_output=True) #, check=True)
+    ], input=query.encode(), capture_output=True)
 
     return result.stdout.strip(), result.stderr.strip()
 
@@ -96,6 +97,39 @@ def collect_coverage(container_name):
         print("Error: Could not record coverage.")
     return percent
 
+# Copy the query to the container and then back to the local machine
+def export_query_to_local(sql_query, container_name, i, local_dir = "bugs", container_tmp_dir = "/tmp"):
+    filename = f"bug{i}.sql"
+    local_path = f"{local_dir}/{filename}"
+    container_path = f"{container_tmp_dir}/{filename}"
+
+    # Create a temporary file locally
+    with tempfile.NamedTemporaryFile("w", delete=False) as tmp:
+        tmp.write(sql_query)
+        tmp.flush()
+        tmp_path = tmp.name
+
+    # Copy it to the container
+    result_cp_in = subprocess.run([
+        "docker", "cp", tmp_path, f"{container_name}:{container_path}"
+    ], capture_output=True)
+
+    if result_cp_in.returncode != 0:
+        print("Error copying query into container:")
+        print(result_cp_in.stderr.decode())
+        return
+
+    # 3. Copy from container to the desired local directory
+    result_cp_out = subprocess.run([
+        "docker", "cp", f"{container_name}:{container_path}", local_path
+    ], capture_output=True)
+
+    if result_cp_out.returncode != 0:
+        print("Error copying query to local machine:")
+        print(result_cp_out.stderr.decode())
+        return
+
+    print(f"Query exported to {local_path}")
 
 def copy_coverage_files(container_name, sqlite_dir, dest_dir="coverage"):
     os.makedirs(dest_dir, exist_ok=True)
