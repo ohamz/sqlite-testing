@@ -15,7 +15,6 @@ class Generator:
     targeting specific bug classes: crashes and logic bugs.
     """
 
-
     def __init__(self, db_json: str):
         self.schema = db_json
         self.comparison_operators = [exp.EQ, exp.NEQ, exp.GT, exp.LT, exp.GTE, exp.LTE]
@@ -43,6 +42,31 @@ class Generator:
     def equivalent_expression_transformation(self, sql: str, count: int) -> List[str]:
         return []  # TODO
 
+    # Helper function to get all columns from the schema
+    def get_all_columns(self, ast):
+        tables = {t.this for t in ast.find_all(exp.Table)}
+        cols = []
+        for t in tables:
+            # print(f"Table: {t}")
+            # print(f"Schema: {self.schema}")
+            if t in self.schema:
+                # print(f"Schema: {self.schema[t]}")
+                cols.extend((col, typ) for col, typ in self.schema[t].items())
+        return cols
+
+    # Helper function to update all columns in the AST
+    def update_all_columns(self, ast, new_table):
+        valid_columns = list(self.schema[new_table].keys())
+
+        for column in ast.find_all(exp.Column):
+            # Pick a new valid column name
+            new_col_name = random.choice(valid_columns)
+            # Replace with new column (optionally qualified)
+            column.set("this", new_col_name)
+            if column.args.get("table"):
+                column.set("table", new_table)
+
+
     def generic_mutation(self, sql: str, count: int) -> List[str]:
         """
         Perform schema-aware SQL mutations using sqlglot and self.schema.
@@ -56,29 +80,34 @@ class Generator:
         mutations = []
 
         for _ in range(count):
+            # print("\nNEW MUTATION")
             mutated_ast = copy.deepcopy(original_ast)
 
             # --- 1. Replace table and SELECT * or project subset of columns ---
             select = mutated_ast.find(exp.Select)
-            table_expr = mutated_ast.find(exp.Table)
+            main_table = random.choice(list(self.schema.keys()))
+            table_expr = exp.Table(this=main_table)
+            mutated_ast.set("from", exp.From(this=table_expr))
+            self.update_all_columns(mutated_ast, main_table)
+
 
             if select:
-                # Pick a new random table from schema
-                main_table = random.choice(list(self.schema.keys()))
-                table_expr = exp.Table(this=main_table)
-                mutated_ast.set("from", exp.From(this=table_expr))
-
-                # Get all columns from the new table
-                new_columns = list(self.schema[main_table].keys())
-
-                # Replace SELECT * or existing columns
-                if random.random() < 0.3:
-                    # Keep SELECT * (randomly)
-                    select.set("expressions", [exp.Star()])
-                else:
-                    # Use a random subset of columns
-                    col_subset = random.sample(new_columns, k=random.randint(1, len(new_columns)))
-                    select.set("expressions", [exp.Column(this=col) for col in col_subset])
+                # Skip table replacement if using JOIN with USING 
+                has_using_join = any(
+                    isinstance(j.args.get("using"), list)
+                    for j in mutated_ast.find_all(exp.Join)
+                )
+                if not has_using_join:
+                    # Replace SELECT * or existing columns
+                    if random.random() < 0.2:
+                        # Keep SELECT * (randomly)
+                        select.set("expressions", [exp.Star()])
+                    else:
+                        # Use a random subset of columns
+                        columns = list(self.schema[main_table].items())
+                        # columns = self.get_all_columns(mutated_ast)
+                        col_subset = random.sample(columns, k=random.randint(1, len(columns)))
+                        select.set("expressions", [exp.Column(this=col_name) for col_name, _ in col_subset])
 
 
             # --- 2. Mutate literals using type-aware replacements ---
@@ -92,18 +121,20 @@ class Generator:
 
 
             # --- 3. Flip comparison operators ---
-            columns = list(self.schema[table_expr.this].items())
+            columns = self.get_all_columns(mutated_ast)
             for comp in mutated_ast.find_all(exp.Condition):
                 left = comp.args.get("this")
                 right = comp.args.get("expression")
 
-                if left and right:
-                    # Skip boolean and NULL expressions
-                    if (isinstance(right, (exp.Boolean, exp.Null, exp.Is))):
-                        continue
-                    col_name, _ = random.choice(columns)
-                    new_op_cls = random.choice(self.comparison_operators)
-                    comp.replace(new_op_cls(this=col_name, expression=right))
+                if not left or not right:
+                    continue
+                
+                # Skip boolean and NULL expressions
+                if (isinstance(right, (exp.Boolean, exp.Null, exp.Is))):
+                    continue
+                col_name, _ = random.choice(columns)
+                new_op_cls = random.choice(self.comparison_operators)
+                comp.replace(new_op_cls(this=exp.Column(this=col_name), expression=right))
 
 
             # --- 4. Add smart WHERE logic using schema ---
@@ -119,7 +150,7 @@ class Generator:
                     # Add a random (NOT) IS NULL/TRUE/FALSE
                     col_name, _ = random.choice(columns)
                     expr = exp.Is(
-                        this=col_name,
+                        this=exp.Column(this=col_name),
                         expression= exp.Null() if random.random() < 0.7 else bool_val
                     )
                 # Randomly wrap with NOT
@@ -133,13 +164,13 @@ class Generator:
 
             # --- 5. Add/Modify JOIN clauses ---
             if not mutated_ast.find(exp.Join):
-                # --- JOIN type mutation ---
+                # JOIN type mutation
                 join_nodes = list(mutated_ast.find_all(exp.Join))
                 for join in join_nodes:
                     new_type = random.choice(["inner", "left", "cross"])
                     join.set("kind", new_type)
 
-                # --- JOIN insertion (ON + USING) ---
+                # JOIN insertion (ON + USING)
                 if (isinstance(mutated_ast, exp.Select) and random.random() < 0.2):
                     current_table = main_table  # use consistent table
                     other_tables = [t for t in self.schema if t != current_table]
@@ -154,6 +185,7 @@ class Generator:
                     use_using = random.random() < 0.5
 
                     if use_using:
+                        # Only allow USING if tables are the same
                         join_table = current_table  # force same table for USING
 
                         common_cols = set(current_schema.keys()) & set(join_schema.keys())
@@ -164,20 +196,6 @@ class Generator:
                                 using=[col],
                                 join_type=None
                             )
-                        else:
-                            # Fallback: simulate USING by self-join on subquery
-                            col, _ = random.choice(list(current_schema.items()))
-                            subquery = (
-                                exp.select(exp.Column(this=col))
-                                .from_(current_table)
-                                .subquery(alias="subq")
-                            )
-                            mutated_ast = mutated_ast.join(
-                                subquery,
-                                using=[col],
-                                join_type=None
-                            )
-
                     else:
                         # Only allow ON if tables are different
                         join_table = random.choice(other_tables)
@@ -203,6 +221,7 @@ class Generator:
 
 
             # --- 6. Random GROUP BY addition ---
+            columns = self.get_all_columns(mutated_ast)
             if isinstance(mutated_ast, exp.Select) and random.random() < 0.4:
                 # Pick random GROUP BY columns
                 group_columns = random.sample(columns, k=random.randint(1, min(3, len(columns))))

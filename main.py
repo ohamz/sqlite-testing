@@ -15,7 +15,7 @@ from generator import Generator, MutationTechnique
 
 
 MAX_MUTATIONS = 2
-MUTATION_ATTEMPTS = 3
+MUTATION_ATTEMPTS = 2
 
 server_container = "sqlite3"
 
@@ -48,13 +48,17 @@ def run_with_coverage(query):
     stdout_new, stderr_new = run_query(server_container, new_sqlite_dir, new_sqlite_binary, query)
     write_results(stdout_new.decode(), stderr_new.decode(), stdout.decode(), stderr.decode())
 
-    if (not stderr.decode() != b""):
+    is_logical = False
+    is_crash = False
+    if (stderr.decode() == b"Segmentation fault\n"):
         print("> Error detected!")
-    if (stdout_new.decode() == stdout.decode()):
+        is_crash = True
+    elif (stdout_new.decode() == stdout.decode()):
         print("> Outputs are the same.")
     else:
         print("> Outputs are different! Check logs.")
-    return coverage, stdout_new.decode() == stdout.decode()
+        is_logical = True
+    return coverage, is_logical, is_crash
 
 def initialize_queue():
     """
@@ -63,7 +67,7 @@ def initialize_queue():
     initial_queries = seed_initial_queries()
     for q in initial_queries:
         print(f"Running initial query: {q}")
-        coverage, _ = run_with_coverage(q)
+        coverage, _, _ = run_with_coverage(q)
         entry = QueueEntry(sql=q, cov=coverage)
         queue.append(entry)
         print(f"Initial query coverage: {coverage}")
@@ -89,6 +93,7 @@ def main_loop():
     initialize_queue()
     queries_count = 0
     bugs_found = 0
+    crashes_found = 0
 
     while queue:
         entry = queue.popleft()
@@ -107,11 +112,14 @@ def main_loop():
         mutated_queries = gen.mutate_query(entry.sql, MutationTechnique.GENERIC, MUTATION_ATTEMPTS)
 
         for new_sql in mutated_queries:
-            coverage, correct = run_with_coverage(new_sql)
+            coverage, bug, crash = run_with_coverage(new_sql)
 
-            if not correct:
-                export_query_to_local(new_sql, server_container, bugs_found)
+            if bug:
+                export_query_to_local(new_sql, server_container, bugs_found, 'logical')
                 bugs_found += 1
+            elif crash:
+                export_query_to_local(new_sql, server_container, crashes_found, 'crash')
+                crashes_found += 1
             elif coverage - entry.new_coverage > 0.05:
                 print(f"New coverage: {coverage} (previous: {entry.new_coverage})")
             else:
@@ -133,6 +141,7 @@ def main_loop():
         print(f"Queue size: {len(queue)}")
         print(f"Queries executed: {queries_count}")
         print(f"Bugs found: {bugs_found}")
+        print(f"Crashes found: {crashes_found}")
 
 
     print(f"Total queries executed: {queries_count}")

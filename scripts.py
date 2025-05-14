@@ -98,8 +98,8 @@ def collect_coverage(container_name):
     return percent
 
 # Copy the query to the container and then back to the local machine
-def export_query_to_local(sql_query, container_name, i, local_dir = "bugs", container_tmp_dir = "/tmp"):
-    filename = f"bug{i}.sql"
+def export_query_to_local(sql_query, container_name, i, type, local_dir = "bugs", container_tmp_dir = "/tmp"):
+    filename = f"bug{i}.sql" if type == 'logical' else f"crash{i}.sql"
     local_path = f"{local_dir}/{filename}"
     container_path = f"{container_tmp_dir}/{filename}"
 
