@@ -47,10 +47,7 @@ class Generator:
         tables = {t.this for t in ast.find_all(exp.Table)}
         cols = []
         for t in tables:
-            # print(f"Table: {t}")
-            # print(f"Schema: {self.schema}")
             if t in self.schema:
-                # print(f"Schema: {self.schema[t]}")
                 cols.extend((col, typ) for col, typ in self.schema[t].items())
         return cols
 
@@ -80,34 +77,30 @@ class Generator:
         mutations = []
 
         for _ in range(count):
-            # print("\nNEW MUTATION")
             mutated_ast = copy.deepcopy(original_ast)
 
             # --- 1. Replace table and SELECT * or project subset of columns ---
             select = mutated_ast.find(exp.Select)
-            main_table = random.choice(list(self.schema.keys()))
-            table_expr = exp.Table(this=main_table)
+            table = random.choice(list(self.schema.keys()))
+            table_expr = exp.Table(this=table)
             mutated_ast.set("from", exp.From(this=table_expr))
-            self.update_all_columns(mutated_ast, main_table)
+            self.update_all_columns(mutated_ast, table)
 
 
             if select:
                 # Skip table replacement if using JOIN with USING 
-                has_using_join = any(
-                    isinstance(j.args.get("using"), list)
-                    for j in mutated_ast.find_all(exp.Join)
-                )
-                if not has_using_join:
+                has_join = any(mutated_ast.find_all(exp.Join))
+                if not has_join:
                     # Replace SELECT * or existing columns
                     if random.random() < 0.2:
                         # Keep SELECT * (randomly)
                         select.set("expressions", [exp.Star()])
                     else:
                         # Use a random subset of columns
-                        columns = list(self.schema[main_table].items())
+                        columns = list(self.schema[table].items())
                         # columns = self.get_all_columns(mutated_ast)
                         col_subset = random.sample(columns, k=random.randint(1, len(columns)))
-                        select.set("expressions", [exp.Column(this=col_name) for col_name, _ in col_subset])
+                        select.set("expressions", [exp.Column(this=col_name, table=table_expr) for col_name, _ in col_subset])
 
 
             # --- 2. Mutate literals using type-aware replacements ---
@@ -134,7 +127,7 @@ class Generator:
                     continue
                 col_name, _ = random.choice(columns)
                 new_op_cls = random.choice(self.comparison_operators)
-                comp.replace(new_op_cls(this=exp.Column(this=col_name), expression=right))
+                comp.replace(new_op_cls(this=exp.Column(this=col_name, table=table_expr), expression=right))
 
 
             # --- 4. Add smart WHERE logic using schema ---
@@ -170,54 +163,32 @@ class Generator:
                     new_type = random.choice(["inner", "left", "cross"])
                     join.set("kind", new_type)
 
-                # JOIN insertion (ON + USING)
+                # JOIN insertion
                 if (isinstance(mutated_ast, exp.Select) and random.random() < 0.2):
-                    current_table = main_table  # use consistent table
+                    current_table = table 
+                    current_schema = self.schema[current_table]
                     other_tables = [t for t in self.schema if t != current_table]
 
                     if not other_tables:
                         continue  # No other table to join
 
-                    join_table = random.choice(list(self.schema.keys()))  # initially choose any table
-                    current_schema = self.schema[current_table]
-                    join_schema = self.schema[join_table]
+                    # Only allow ON if tables are different
+                    join_table_name = random.choice(other_tables)
+                    alias = f"{join_table_name}_dup"
+                    join_table = exp.Table(this=join_table_name, alias=alias) 
+                    join_schema = self.schema[join_table_name]
 
-                    use_using = random.random() < 0.5
-
-                    if use_using:
-                        # Only allow USING if tables are the same
-                        join_table = current_table  # force same table for USING
-
-                        common_cols = set(current_schema.keys()) & set(join_schema.keys())
-                        if common_cols:
-                            col = random.choice(list(common_cols))
-                            mutated_ast = mutated_ast.join(
-                                join_table,
-                                using=[col],
-                                join_type=None
-                            )
-                    else:
-                        # Only allow ON if tables are different
-                        join_table = random.choice(other_tables)
-                        join_schema = self.schema[join_table]
-
-                        compatible_pairs = [
-                            (col1, col2)
-                            for col1, type1 in current_schema.items()
-                            for col2, type2 in join_schema.items()
-                            if type1 == type2
-                        ]
-
-                        if not compatible_pairs:
-                            continue  # skip if no valid join pair
-
-                        col1, col2 = random.choice(compatible_pairs)
-                        on_condition = f"{current_table}.{col1} = {join_table}.{col2}"
-                        mutated_ast = mutated_ast.join(
-                            join_table,
-                            on=on_condition,
-                            join_type=None
-                        )
+                    col1, col2 = random.choice([
+                        (col1, col2)
+                        for col1, _ in current_schema.items()
+                        for col2, _ in join_schema.items()
+                    ])
+                    on_condition = f"{current_table}.{col1} = {alias}.{col2}"
+                    mutated_ast = mutated_ast.join(
+                        join_table,
+                        on=on_condition,
+                        join_type=None
+                    )
 
 
             # --- 6. Random GROUP BY addition ---
@@ -232,11 +203,11 @@ class Generator:
                 select_exprs = []
                 for col_name, _ in columns:
                     if col_name in col_names:
-                        select_exprs.append(exp.Column(this=col_name))
+                        select_exprs.append(exp.Column(this=col_name, table=table_expr))
                     else:
                         # Randomly add an aggregate function
                         agg_cls = random.choice(self.aggregate_functions)
-                        select_exprs.append(agg_cls(this=exp.Column(this=col_name)))
+                        select_exprs.append(agg_cls(this=exp.Column(this=col_name, table=table_expr)))
                 mutated_ast.set("expressions", select_exprs)
 
                 # Add a HAVING clause
@@ -247,7 +218,7 @@ class Generator:
                     op_cls = random.choice(self.comparison_operators)
 
                     having_expr = op_cls(
-                        this=func_cls(this=exp.Column(this=having_col[0])),
+                        this=func_cls(this=exp.Column(this=having_col[0], table=table_expr)),
                         expression=exp.Literal.number(str(random.randint(1, 100)))
                     )
                     mutated_ast = mutated_ast.having(having_expr, append=False)
