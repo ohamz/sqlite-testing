@@ -88,7 +88,6 @@ class Generator:
 
 
             if select:
-                # Skip table replacement if using JOIN with USING 
                 has_join = any(mutated_ast.find_all(exp.Join))
                 if not has_join:
                     # Replace SELECT * or existing columns

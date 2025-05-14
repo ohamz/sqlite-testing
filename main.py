@@ -15,7 +15,7 @@ from generator import Generator, MutationTechnique
 
 
 MAX_MUTATIONS = 2
-MUTATION_ATTEMPTS = 2
+MUTATION_ATTEMPTS = 3
 
 server_container = "sqlite3"
 
