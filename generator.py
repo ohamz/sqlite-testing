@@ -1,14 +1,8 @@
-from enum import Enum, auto
 from typing import List
 from sqlglot import parse_one, exp
 import copy
 import random
 
-class MutationTechnique(Enum):
-    PQS = auto()
-    TLP = auto()
-    EET = auto()
-    GENERIC = auto()
 class Generator:
     """
     Generator class responsible for creating a database with different types of tables
@@ -20,27 +14,9 @@ class Generator:
         self.comparison_operators = [exp.EQ, exp.NEQ, exp.GT, exp.LT, exp.GTE, exp.LTE]
         self.aggregate_functions = [exp.Count, exp.Sum, exp.Avg, exp.Max, exp.Min]
 
-    def mutate_query(self, sql: str, technique: MutationTechnique, count: int) -> List[str]:
+    def mutate_query(self, sql: str, count: int) -> List[str]:
         """Dispatches to the appropriate mutation technique."""
-        if technique == MutationTechnique.PQS:
-            return self.pivoted_query_synthesis(sql, count)
-        elif technique == MutationTechnique.TLP:
-            return self.ternary_logic_partitioning(sql, count)
-        elif technique == MutationTechnique.EET:
-            return self.equivalent_expression_transformation(sql, count)
-        elif technique == MutationTechnique.GENERIC:
-            return self.generic_mutation(sql, count)
-        else:
-            return []
-
-    def pivoted_query_synthesis(self, sql: str, count: int) -> List[str]:
-        return []  # TODO
-
-    def ternary_logic_partitioning(self, sql: str, count: int) -> List[str]:
-        return []  # TODO
-
-    def equivalent_expression_transformation(self, sql: str, count: int) -> List[str]:
-        return []  # TODO
+        return self.generic_mutation(sql, count)
 
     # Helper function to get all columns from the schema
     def get_all_columns(self, ast):
@@ -88,6 +64,7 @@ class Generator:
 
 
             if select:
+                # Skip table replacement if using JOIN with USING 
                 has_join = any(mutated_ast.find_all(exp.Join))
                 if not has_join:
                     # Replace SELECT * or existing columns
@@ -164,24 +141,34 @@ class Generator:
 
                 # JOIN insertion
                 if (isinstance(mutated_ast, exp.Select) and random.random() < 0.2):
-                    current_table = table 
+                    current_table = table  # use consistent table
                     current_schema = self.schema[current_table]
                     other_tables = [t for t in self.schema if t != current_table]
 
                     if not other_tables:
                         continue  # No other table to join
 
+                    join_table = random.choice(list(self.schema.keys()))  # initially choose any table
+                    join_schema = self.schema[join_table]
+
+
                     # Only allow ON if tables are different
                     join_table_name = random.choice(other_tables)
                     alias = f"{join_table_name}_dup"
-                    join_table = exp.Table(this=join_table_name, alias=alias) 
+                    join_table = exp.Table(this=join_table, alias=alias) 
                     join_schema = self.schema[join_table_name]
 
-                    col1, col2 = random.choice([
+                    compatible_pairs = [
                         (col1, col2)
-                        for col1, _ in current_schema.items()
-                        for col2, _ in join_schema.items()
-                    ])
+                        for col1, type1 in current_schema.items()
+                        for col2, type2 in join_schema.items()
+                        if type1 == type2
+                    ]
+
+                    if not compatible_pairs:
+                        continue  # skip if no valid join pair
+
+                    col1, col2 = random.choice(compatible_pairs)
                     on_condition = f"{current_table}.{col1} = {alias}.{col2}"
                     mutated_ast = mutated_ast.join(
                         join_table,

@@ -1,9 +1,8 @@
-# Use Python base image
 FROM python:3.11-slim
 
-# Install docker CLI
+# Install Docker CLI
 RUN apt-get update && \
-    apt-get install -y docker.io curl && \
+    apt-get install -y docker.io && \
     apt-get clean
 
 # Install Python dependencies
@@ -14,5 +13,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . /app
 WORKDIR /app
 
-# You can run this interactively or let CMD run it automatically
-CMD ["python", "main.py"]
+# Copy and install executable script
+COPY test-db /usr/bin/test-db
+RUN chmod +x /usr/bin/test-db
+
+# Default command
+CMD ["/usr/bin/test-db"]

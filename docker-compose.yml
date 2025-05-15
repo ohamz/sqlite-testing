@@ -12,7 +12,7 @@ services:
     depends_on:
       - sqlite
     volumes:
-      - .:/app
       - /var/run/docker.sock:/var/run/docker.sock
     working_dir: /app
     entrypoint: ["sleep", "infinity"]
+

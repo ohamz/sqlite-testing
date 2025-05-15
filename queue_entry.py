@@ -8,14 +8,12 @@ class QueueEntry:
     new_coverage (int): The new coverage value after the last mutation.
     last_technique (str): The last mutation technique used.
     """
-    def __init__(self, sql, cov, mutation_count=0, last_technique=None):
+    def __init__(self, sql, cov, mutation_count=0):
         self.sql = sql                     
         self.mutation_count = mutation_count
         self.prev_coverage = cov
         self.new_coverage = cov
-        self.last_technique = last_technique
 
-    # TODO: create 2 update functions: one for old coverage and one for new coverage. TO CHECK??
     def update_coverage(self, new_cov):
         self.new_coverage = new_cov
 
@@ -26,4 +24,4 @@ class QueueEntry:
         self.mutation_count = 0
 
     def __repr__(self):
-        return f"<Query (mut#{self.mutation_count}, cov {self.prev_coverage}→{self.new_coverage}, technique={self.last_technique})>"
+        return f"<Query (mut#{self.mutation_count}, cov-old: {self.prev_coverage}, cov-new: {self.new_coverage})>"
