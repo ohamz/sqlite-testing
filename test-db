@@ -1,2 +1,2 @@
 #!/bin/sh
-exec python /app/main.py "$@"
+exec python /app/src/main.py "$@"
