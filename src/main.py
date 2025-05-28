@@ -1,6 +1,6 @@
 import sys
 from collections import deque
-from queue_entry import QueueEntry
+from src.queue_entry import QueueEntry
 from scripts import (
     setup_db,
     clear_coverage,
@@ -8,7 +8,7 @@ from scripts import (
     collect_coverage,
     export_query_to_local,
 )
-from generator import Generator
+from src.generator import Generator
 
 
 MAX_MUTATIONS = 2

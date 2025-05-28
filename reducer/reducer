@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# Wrapper that calls main.py
+python3 main.py "$@"
