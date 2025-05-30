@@ -1,7 +1,7 @@
 # sqlite-testing
 
 ### Start the containers
-To builds the Docker images and starts both containers in the background:
+To build the Docker images and starts both containers in the background:
 
 ```bash
 docker compose up --build -d
