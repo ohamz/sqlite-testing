@@ -2,9 +2,9 @@ import subprocess
 import tempfile
 import os
 
-def run_test(query: str, test_script: str, mode: str) -> bool:
+def run_test(query: str, test_script: str) -> bool:
     path = write_temp_query(query)
-    result = subprocess.run(["bash", test_script, path, mode])
+    result = subprocess.run(["bash", test_script, path])
     os.unlink(path)
     return result.returncode == 0
 

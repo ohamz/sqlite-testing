@@ -10,11 +10,13 @@ RUN pip install sqlglot
 WORKDIR /app
 
 # Copy scripts and source files
-COPY reducer main.py test.sh original_test.sql test.sql ./
+COPY main.py test-diff.sh test-crash.sh query.sql ./
 COPY src/ ./src/
+COPY reducer /usr/bin/
 
 # Convert line endings and make scripts executable
-RUN dos2unix reducer test.sh && chmod +x reducer test.sh
+RUN dos2unix /usr/bin/reducer test-diff.sh && chmod +x /usr/bin/reducer test-diff.sh
+RUN dos2unix /usr/bin/reducer test-crash.sh && chmod +x /usr/bin/reducer test-crash.sh
 
 # Default command (can be overridden)
-CMD ["./reducer", "--query", "original_test.sql", "--test", "./test.sh", "--mode", "diff"]
+CMD ["/usr/bin/reducer", "--query", "query.sql", "--test", "./test-diff.sh"]
